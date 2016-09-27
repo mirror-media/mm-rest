@@ -1,4 +1,4 @@
-package mm-rest
+package gingo
 
 import (
 	"log"
