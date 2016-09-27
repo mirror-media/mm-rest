@@ -4,7 +4,7 @@ import (
 	"flag"
 	"log"
 
-	"github.com/mirror-media/mm-rest/gingo"
+	"github.com/mirror-media/mm-rest/"
 )
 
 var (
