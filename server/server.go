@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -17,7 +18,55 @@ var (
 	redisAuth    = flag.String("redis-auth", "", "Password to the Redis server")
 	name         = ""
 	key          = ""
+	ErrNil       = errors.New("redigo: nil returned")
 )
+
+type Error string
+
+// Values is a helper that converts an array command reply to a []interface{}.
+// If err is not equal to nil, then Values returns nil, err. Otherwise, Values
+// converts the reply as follows:
+//
+//  Reply type      Result
+//  array           reply, nil
+//  nil             nil, ErrNil
+//  other           nil, error
+func Values(reply interface{}, err error) ([]interface{}, error) {
+	if err != nil {
+		return nil, err
+	}
+	switch reply := reply.(type) {
+	case []interface{}:
+		return reply, nil
+	case nil:
+		return nil, ErrNil
+	}
+	return nil, fmt.Errorf("redigo: unexpected type for Values, got type %T", reply)
+}
+
+func Strings(reply interface{}, err error) ([]string, error) {
+	if err != nil {
+		return nil, err
+	}
+	switch reply := reply.(type) {
+	case []interface{}:
+		result := make([]string, len(reply))
+		for i := range reply {
+			if reply[i] == nil {
+				continue
+			}
+			p, ok := reply[i].([]byte)
+			if !ok {
+				return nil, fmt.Errorf("redigo: unexpected element type for Strings, got type %T", reply[i])
+			}
+			result[i] = string(p)
+		}
+		return result, nil
+	case nil:
+		return nil, ErrNil
+	}
+	return nil, fmt.Errorf("redigo: unexpected type for Strings, got type ")
+}
 
 func main() {
 	flag.Parse()
@@ -25,9 +74,9 @@ func main() {
 	log.Printf("redis address is %s\n", *redisAddress)
 	log.Printf("redis auth is %s\n", *redisAuth)
 	redisPrimary := gingo.NewRedisStore(*redisPrimary, *redisAuth)
-	redis := gingo.NewRedisStore(*redisAddress, *redisAuth)
+	redisClient := gingo.NewRedisStore(*redisAddress, *redisAuth)
 	router.GET("/ready", func(c *gin.Context) {
-		ret, err := redis.Do("PING")
+		ret, err := redisClient.Do("PING")
 		if err != nil {
 			c.JSON(500, gin.H{
 				"_error": err,
@@ -47,27 +96,29 @@ func main() {
 		hasher.Write([]byte(name))
 		redis_key := hex.EncodeToString(hasher.Sum(nil))
 		log.Printf("redis key is %s\n", redis_key)
-		ret, err := redis.Do("EXISTS", redis_key)
+		ret, err := redisClient.Do("EXISTS", redis_key)
 		if err != nil {
 			c.JSON(500, gin.H{
 				"_error": err,
 			})
 			return
 		}
-		ret, err = redis.Do("HGETALL", "listing-form")
-		switch v := ret.(type) {
-		case string:
-			fmt.Println(v)
-		case int, uint, int32, int64:
-			fmt.Println(v)
-		case byte:
-			fmt.Println("byte")
-		default:
-
+		ret, err = Values(redisClient.Do("HGETALL", "listing-form"))
+		if err != nil {
+			c.JSON(500, gin.H{
+				"_error": err,
+			})
+			return
 		}
-		//resp := "{ \"total\": " + total + ", \"q1r\": \"" + q1r + ", \"q3r\": " + q3r + ", \"q4r\": " + q4r + "}"
+		value, err := Strings(ret, err)
+		if err != nil {
+			c.JSON(500, gin.H{
+				"_error": err,
+			})
+			return
+		}
 		c.JSON(200, gin.H{
-			"result": ret,
+			"result": value,
 		})
 		redisPrimary.Do("HINCRBY", "listing-form", "total", 1)
 		if q1 == "1" {
