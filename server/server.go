@@ -7,8 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/itsjamie/gin-cors"
 	"github.com/mirror-media/mm-rest/gingo"
 )
 
@@ -73,6 +77,15 @@ func main() {
 	router := gin.Default()
 	log.Printf("redis address is %s\n", *redisAddress)
 	log.Printf("redis auth is %s\n", *redisAuth)
+	router.Use(cors.Middleware(cors.Config{
+		Origins:         "*",
+		Methods:         "GET, PUT, POST, DELETE",
+		RequestHeaders:  "Origin, Authorization, Content-Type",
+		ExposedHeaders:  "",
+		MaxAge:          50 * time.Second,
+		Credentials:     true,
+		ValidateHeaders: false,
+	}))
 	redisPrimary := gingo.NewRedisStore(*redisPrimary, *redisAuth)
 	redisClient := gingo.NewRedisStore(*redisAddress, *redisAuth)
 	router.GET("/ready", func(c *gin.Context) {
@@ -93,9 +106,36 @@ func main() {
 		q1 := c.Query("q1")
 		q3 := c.Query("q3")
 		q4 := c.Query("q4")
+		last, err := c.Request.Cookie("latest")
+		current := int(time.Now().Unix())
+		fmt.Println(last.Value)
+		fmt.Println(current)
+		if err == nil {
+			last_time, err := strconv.Atoi(last.Value)
+			if err == nil {
+				if (current - last_time) < 60 {
+					c.JSON(500, gin.H{
+						"_error": "code 999",
+					})
+					return
+				}
+			} else {
+				if (current - last_time) < 120 {
+					c.JSON(500, gin.H{
+						"_error": "Internal Server Error",
+					})
+					return
+				}
+			}
+		}
+		if name == "" || q1 == "" || q3 == "" || q4 == "" {
+			c.JSON(200, gin.H{
+				"_error": "Invalid input",
+			})
+			return
+		}
 		hasher.Write([]byte(name))
 		redis_key := hex.EncodeToString(hasher.Sum(nil))
-		log.Printf("redis key is %s\n", redis_key)
 		ret, err := redisClient.Do("EXISTS", redis_key)
 		if err != nil {
 			c.JSON(500, gin.H{
@@ -117,6 +157,11 @@ func main() {
 			})
 			return
 		}
+		cookie := &http.Cookie{
+			Name:  "latest",
+			Value: strconv.Itoa(int(time.Now().Unix())),
+		}
+		http.SetCookie(c.Writer, cookie)
 		c.JSON(200, gin.H{
 			"result": value,
 		})
