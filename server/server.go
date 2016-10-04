@@ -3,12 +3,14 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
+	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,12 +22,19 @@ var (
 	redisAddress = flag.String("redis-address", ":6379", "Address to the Redis server")
 	redisPrimary = flag.String("redis-primary", ":6379", "Address to the Redis Primary server")
 	redisAuth    = flag.String("redis-auth", "", "Password to the Redis server")
+	secret       = flag.String("secret", "", "Secret for the Google recaptcha")
 	name         = ""
 	key          = ""
 	ErrNil       = errors.New("redigo: nil returned")
 )
 
 type Error string
+
+type captcha_struct struct {
+	success      bool
+	challenge_ts string
+	hostname     string
+}
 
 // Values is a helper that converts an array command reply to a []interface{}.
 // If err is not equal to nil, then Values returns nil, err. Otherwise, Values
@@ -102,67 +111,59 @@ func main() {
 	})
 	router.GET("/check", func(c *gin.Context) {
 		hasher := md5.New()
-		name := c.Query("name")
-		q1 := c.Query("q1")
-		q3 := c.Query("q3")
-		q4 := c.Query("q4")
-		last, err := c.Request.Cookie("latest")
-		current := int(time.Now().Unix())
-		if err == nil {
-			last_time, err := strconv.Atoi(last.Value)
-			if err == nil {
-				if (current - last_time) < 60 {
-					c.JSON(500, gin.H{
-						"_error": "code 999",
-					})
-					return
-				}
-			} else {
-				if (current - last_time) < 120 {
-					c.JSON(500, gin.H{
-						"_error": "Internal Server Error",
-					})
-					return
-				}
-			}
-		}
-		if name == "" || q1 == "" || q3 == "" || q4 == "" {
-			c.JSON(200, gin.H{
-				"_error": "Invalid input",
-			})
-			return
-		}
-		hasher.Write([]byte(name))
-		redis_key := hex.EncodeToString(hasher.Sum(nil))
-		ret, err := redisClient.Do("EXISTS", redis_key)
+		ret, err := Values(redisClient.Do("HGETALL", "listing-form"))
 		if err != nil {
 			c.JSON(500, gin.H{
-				"_error": err,
-			})
-			return
-		}
-		ret, err = Values(redisClient.Do("HGETALL", "listing-form"))
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": err,
+				"_error": "Internal Server Error",
 			})
 			return
 		}
 		value, err := Strings(ret, err)
 		if err != nil {
+			c.JSON(200, gin.H{
+				"result": value,
+			})
+			return
+		}
+		name := c.Query("name")
+		q1 := c.Query("q1")
+		q3 := c.Query("q3")
+		q4 := c.Query("q4")
+		captcha := c.Query("g-recaptcha-response")
+		resp, err := http.PostForm("https://www.google.com/recaptcha/api/siteverify",
+			url.Values{"secret": {*secret}, "response": {captcha}})
+		if err != nil {
+			c.JSON(200, gin.H{
+				"result": value,
+			})
+			return
+		}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		var g captcha_struct
+		err = json.Unmarshal(body, &g)
+		if g.success == false || err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
+			c.JSON(200, gin.H{
+				"result": value,
+			})
+			return
+		}
+		hasher.Write([]byte(name))
+		redis_key := hex.EncodeToString(hasher.Sum(nil))
+		name_check, err := redisClient.Do("EXISTS", redis_key)
+		if err != nil {
 			c.JSON(500, gin.H{
 				"_error": err,
 			})
 			return
+		} else {
+			c.JSON(200, gin.H{
+				"result": value,
+				"check":  name_check,
+				"body":   body,
+			})
+			return
 		}
-		cookie := &http.Cookie{
-			Name:  "latest",
-			Value: strconv.Itoa(int(time.Now().Unix())),
-		}
-		http.SetCookie(c.Writer, cookie)
-		c.JSON(200, gin.H{
-			"result": value,
-		})
 		redisPrimary.Do("HINCRBY", "listing-form", "total", 1)
 		if q1 == "1" {
 			redisPrimary.Do("HINCRBY", "listing-form", "q1r", 1)
