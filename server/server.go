@@ -130,6 +130,7 @@ func main() {
 		q3 := c.Query("q3")
 		q4 := c.Query("q4")
 		captcha := c.Query("g-recaptcha-response")
+		fmt.Println(captcha)
 		resp, err := http.PostForm("https://www.google.com/recaptcha/api/siteverify",
 			url.Values{"secret": {*secret}, "response": {captcha}})
 		if err != nil {
