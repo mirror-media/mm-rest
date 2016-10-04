@@ -144,7 +144,8 @@ func main() {
 		err = json.Unmarshal(body, &g)
 		if g.success == false || err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
 			c.JSON(200, gin.H{
-				"result": value,
+				"result":  value,
+				"captcha": g,
 			})
 			return
 		}
@@ -160,7 +161,6 @@ func main() {
 			c.JSON(200, gin.H{
 				"result": value,
 				"check":  name_check,
-				"body":   body,
 			})
 			return
 		}
