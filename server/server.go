@@ -27,12 +27,6 @@ var (
 
 type Error string
 
-type captcha_struct struct {
-	success      bool
-	challenge_ts string
-	hostname     string
-}
-
 // Values is a helper that converts an array command reply to a []interface{}.
 // If err is not equal to nil, then Values returns nil, err. Otherwise, Values
 // converts the reply as follows:
@@ -128,8 +122,8 @@ func main() {
 		q4 := c.Query("q4")
 		captcha := c.Query("g-recaptcha-response")
 		recaptcha.Init(*secret)
-		detect := recaptcha.Confirm("", captcha)
-		if detect == false || err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
+		recaptcha.Confirm("", captcha)
+		if err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
 			c.JSON(200, gin.H{
 				"result": value,
 			})
@@ -148,7 +142,6 @@ func main() {
 				"result": value,
 				"check":  name_check,
 			})
-			return
 		}
 		redisPrimary.Do("HINCRBY", "listing-form", "total", 1)
 		if q1 == "1" {
