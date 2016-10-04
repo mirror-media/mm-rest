@@ -3,16 +3,13 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
-	"net/url"
 	"time"
 
+	"github.com/dpapathanasiou/go-recaptcha"
 	"github.com/gin-gonic/gin"
 	"github.com/itsjamie/gin-cors"
 	"github.com/mirror-media/mm-rest/gingo"
@@ -130,24 +127,11 @@ func main() {
 		q3 := c.Query("q3")
 		q4 := c.Query("q4")
 		captcha := c.Query("g-recaptcha-response")
-		fmt.Println(captcha)
-		resp, err := http.PostForm("https://www.google.com/recaptcha/api/siteverify",
-			url.Values{"secret": {*secret}, "response": {captcha}})
-		if err != nil {
+		recaptcha.Init(*secret)
+		detect := recaptcha.Confirm("", captcha)
+		if detect == false || err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
 			c.JSON(200, gin.H{
 				"result": value,
-			})
-			return
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		var g captcha_struct
-		err = json.Unmarshal(body, &g)
-		fmt.Println(g.success)
-		if g.success == false || err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
-			c.JSON(200, gin.H{
-				"result":  value,
-				"captcha": g,
 			})
 			return
 		}
