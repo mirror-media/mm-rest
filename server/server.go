@@ -108,8 +108,6 @@ func main() {
 		q4 := c.Query("q4")
 		last, err := c.Request.Cookie("latest")
 		current := int(time.Now().Unix())
-		fmt.Println(last.Value)
-		fmt.Println(current)
 		if err == nil {
 			last_time, err := strconv.Atoi(last.Value)
 			if err == nil {
