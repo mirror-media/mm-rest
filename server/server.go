@@ -142,6 +142,7 @@ func main() {
 		body, err := ioutil.ReadAll(resp.Body)
 		var g captcha_struct
 		err = json.Unmarshal(body, &g)
+		fmt.Println(g.success)
 		if g.success == false || err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
 			c.JSON(200, gin.H{
 				"result":  value,
