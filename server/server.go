@@ -111,10 +111,14 @@ func main() {
 		}
 		value, err := Strings(ret, err)
 		if err != nil {
+			c.JSON(500, gin.H{
+				"_error": "Internal Server Error",
+			})
+			return
+		} else {
 			c.JSON(200, gin.H{
 				"result": value,
 			})
-			return
 		}
 		q1 := c.Query("q1")
 		q2 := c.Query("q2")
@@ -123,12 +127,6 @@ func main() {
 		captcha := c.Query("g-recaptcha-response")
 		recaptcha.Init(*secret)
 		recaptcha.Confirm("", captcha)
-		if err != nil || q1 == "" || q2 == "" || q3 == "" || q4 == "" {
-			c.JSON(200, gin.H{
-				"result": value,
-			})
-			return
-		}
 		redisPrimary.Do("HINCRBY", "tpe-form", "total", 1)
 		if q1 == "1" {
 			redisPrimary.Do("HINCRBY", "tpe-form", "q1r", 1)
