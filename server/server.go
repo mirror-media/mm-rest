@@ -100,6 +100,50 @@ func main() {
 			"result": ret,
 		})
 	})
+
+	router.GET("/tpe", func(c *gin.Context) {
+		ret, err := Values(redisClient.Do("HGETALL", "tpe-form"))
+		if err != nil {
+			c.JSON(500, gin.H{
+				"_error": "Internal Server Error",
+			})
+			return
+		}
+		value, err := Strings(ret, err)
+		if err != nil {
+			c.JSON(200, gin.H{
+				"result": value,
+			})
+			return
+		}
+		q1 := c.Query("q1")
+		q2 := c.Query("q2")
+		q3 := c.Query("q3")
+		q4 := c.Query("q4")
+		captcha := c.Query("g-recaptcha-response")
+		recaptcha.Init(*secret)
+		recaptcha.Confirm("", captcha)
+		if err != nil || q1 == "" || q2 == "" || q3 == "" || q4 == "" {
+			c.JSON(200, gin.H{
+				"result": value,
+			})
+			return
+		}
+		redisPrimary.Do("HINCRBY", "tpe-form", "total", 1)
+		if q1 == "1" {
+			redisPrimary.Do("HINCRBY", "tpe-form", "q1r", 1)
+		}
+		if q2 == "1" {
+			redisPrimary.Do("HINCRBY", "tpe-form", "q2r", 1)
+		}
+		if q3 == "1" {
+			redisPrimary.Do("HINCRBY", "tpe-form", "q3r", 1)
+		}
+		if q4 == "1" {
+			redisPrimary.Do("HINCRBY", "tpe-form", "q4r", 1)
+		}
+	})
+
 	router.GET("/check", func(c *gin.Context) {
 		hasher := md5.New()
 		ret, err := Values(redisClient.Do("HGETALL", "listing-form"))
