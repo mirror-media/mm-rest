@@ -125,20 +125,23 @@ func main() {
 		q3 := c.Query("q3")
 		q4 := c.Query("q4")
 		captcha := c.Query("g-recaptcha-response")
+		log.Printf("redis auth is %s\n", *secret)
 		recaptcha.Init(*secret)
-		recaptcha.Confirm("", captcha)
-		redisPrimary.Do("HINCRBY", "tpe-form", "total", 1)
-		if q1 == "1" {
-			redisPrimary.Do("HINCRBY", "tpe-form", "q1r", 1)
-		}
-		if q2 == "1" {
-			redisPrimary.Do("HINCRBY", "tpe-form", "q2r", 1)
-		}
-		if q3 == "1" {
-			redisPrimary.Do("HINCRBY", "tpe-form", "q3r", 1)
-		}
-		if q4 == "1" {
-			redisPrimary.Do("HINCRBY", "tpe-form", "q4r", 1)
+		result := recaptcha.Confirm("", captcha)
+		if result {
+			redisPrimary.Do("HINCRBY", "tpe-form", "total", 1)
+			if q1 == "1" {
+				redisPrimary.Do("HINCRBY", "tpe-form", "q1r", 1)
+			}
+			if q2 == "1" {
+				redisPrimary.Do("HINCRBY", "tpe-form", "q2r", 1)
+			}
+			if q3 == "1" {
+				redisPrimary.Do("HINCRBY", "tpe-form", "q3r", 1)
+			}
+			if q4 == "1" {
+				redisPrimary.Do("HINCRBY", "tpe-form", "q4r", 1)
+			}
 		}
 	})
 
