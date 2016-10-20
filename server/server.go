@@ -1,4 +1,4 @@
-package main
+eackage main
 
 import (
 	"crypto/md5"
@@ -125,9 +125,15 @@ func main() {
 		q3 := c.Query("q3")
 		q4 := c.Query("q4")
 		captcha := c.Query("g-recaptcha-response")
-		log.Printf("redis auth is %s\n", *secret)
+		if captcha == '' {
+			c.JSON(500, gin.H{
+				"_error": "Internal Server Error",
+			})
+			return
+		}
 		recaptcha.Init(*secret)
 		result := recaptcha.Confirm("", captcha)
+		log.Printf("capcha return is %s\n", result)
 		if result {
 			redisPrimary.Do("HINCRBY", "tpe-form", "total", 1)
 			if q1 == "1" {
