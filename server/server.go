@@ -1,4 +1,4 @@
-eackage main
+package main
 
 import (
 	"crypto/md5"
@@ -125,7 +125,7 @@ func main() {
 		q3 := c.Query("q3")
 		q4 := c.Query("q4")
 		captcha := c.Query("g-recaptcha-response")
-		if captcha == '' {
+		if captcha == "" {
 			c.JSON(500, gin.H{
 				"_error": "Internal Server Error",
 			})
