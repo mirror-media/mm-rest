@@ -109,6 +109,13 @@ func main() {
 			})
 			return
 		}
+		captcha := c.Query("g-recaptcha-response")
+		if captcha == "" {
+			c.JSON(500, gin.H{
+				"_error": "Internal Server Error",
+			})
+			return
+		}
 		value, err := Strings(ret, err)
 		if err != nil {
 			c.JSON(500, gin.H{
@@ -124,13 +131,6 @@ func main() {
 		q2 := c.Query("q2")
 		q3 := c.Query("q3")
 		q4 := c.Query("q4")
-		captcha := c.Query("g-recaptcha-response")
-		if captcha == "" {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
-		}
 		recaptcha.Init(*secret)
 		result := recaptcha.Confirm("", captcha)
 		log.Printf("capcha return is %s\n", result)
