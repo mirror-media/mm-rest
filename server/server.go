@@ -1,15 +1,13 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/dpapathanasiou/go-recaptcha"
+	//"github.com/dpapathanasiou/go-recaptcha"
 	"github.com/gin-gonic/gin"
 	"github.com/itsjamie/gin-cors"
 	"github.com/mirror-media/mm-rest/gingo"
@@ -23,6 +21,8 @@ var (
 	name         = ""
 	key          = ""
 	ErrNil       = errors.New("redigo: nil returned")
+	//redisPrimary := gingo.NewRedisStore(*redisPrimary, *redisAuth)
+	redisClient = gingo.NewRedisStore(*redisAddress, *redisAuth)
 )
 
 type Error string
@@ -86,125 +86,31 @@ func main() {
 		Credentials:     true,
 		ValidateHeaders: false,
 	}))
-	redisPrimary := gingo.NewRedisStore(*redisPrimary, *redisAuth)
-	redisClient := gingo.NewRedisStore(*redisAddress, *redisAuth)
-	router.GET("/ready", func(c *gin.Context) {
-		ret, err := redisClient.Do("PING")
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": err,
-			})
-			return
-		}
-		c.JSON(200, gin.H{
-			"result": ret,
-		})
-	})
-
-	router.GET("/tpe", func(c *gin.Context) {
-		ret, err := Values(redisClient.Do("HGETALL", "tpe-form"))
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
-		}
-		captcha := c.Query("g-recaptcha-response")
-		if captcha == "" {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
-		}
-		value, err := Strings(ret, err)
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
-		} else {
-			c.JSON(200, gin.H{
-				"result": value,
-			})
-		}
-		q1 := c.Query("q1")
-		q2 := c.Query("q2")
-		q3 := c.Query("q3")
-		q4 := c.Query("q4")
-		recaptcha.Init(*secret)
-		result := recaptcha.Confirm("", captcha)
-		log.Printf("capcha return is %s\n", result)
-		if result {
-			redisPrimary.Do("HINCRBY", "tpe-form", "total", 1)
-			if q1 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q1r", 1)
-			}
-			if q2 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q2r", 1)
-			}
-			if q3 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q3r", 1)
-			}
-			if q4 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q4r", 1)
-			}
-		}
-	})
-
-	router.GET("/check", func(c *gin.Context) {
-		hasher := md5.New()
-		ret, err := Values(redisClient.Do("HGETALL", "listing-form"))
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
-		}
-		value, err := Strings(ret, err)
-		if err != nil {
-			c.JSON(200, gin.H{
-				"result": value,
-			})
-			return
-		}
-		name := c.Query("name")
-		q1 := c.Query("q1")
-		q3 := c.Query("q3")
-		q4 := c.Query("q4")
-		captcha := c.Query("g-recaptcha-response")
-		recaptcha.Init(*secret)
-		recaptcha.Confirm("", captcha)
-		if err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
-			c.JSON(200, gin.H{
-				"result": value,
-			})
-			return
-		}
-		hasher.Write([]byte(name))
-		redis_key := hex.EncodeToString(hasher.Sum(nil))
-		name_check, err := redisClient.Do("EXISTS", redis_key)
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": err,
-			})
-			return
-		} else {
-			c.JSON(200, gin.H{
-				"result": value,
-				"check":  name_check,
-			})
-		}
-		redisPrimary.Do("HINCRBY", "listing-form", "total", 1)
-		if q1 == "1" {
-			redisPrimary.Do("HINCRBY", "listing-form", "q1r", 1)
-		}
-		if q3 == "1" {
-			redisPrimary.Do("HINCRBY", "listing-form", "q3r", 1)
-		}
-		if q4 == "1" {
-			redisPrimary.Do("HINCRBY", "listing-form", "q4r", 1)
-		}
-	})
+	router.GET("/ready", ready)
+	router.GET("/weblog", weblog)
 
 	router.Run()
+}
+
+func ready(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"result": "ok",
+	})
+	return
+}
+
+func weblog(c *gin.Context) {
+	qid := c.Query("qid")
+	ret, err := Strings(redisClient.Do("MGET", qid))
+	if err != nil {
+		c.JSON(500, gin.H{
+			"message": err,
+			"_error":  err,
+		})
+		return
+	}
+	c.JSON(200, gin.H{
+		"message": ret,
+		"result":  ret,
+	})
 }
