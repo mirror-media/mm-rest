@@ -11,9 +11,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/itsjamie/gin-cors"
 	"github.com/mirror-media/mm-rest/gingo"
+
+	"golang.org/x/net/context"
+	// Imports the Stackdriver Logging client package
+	"cloud.google.com/go/logging"
 )
 
 var (
+	projectId    = flag.String("project-id", "mirrormedia-1470651750304", "Your Google Cloud Platform project ID")
 	redisAddress = flag.String("redis-address", ":6379", "Address to the Redis server")
 	redisPrimary = flag.String("redis-primary", ":6379", "Address to the Redis Primary server")
 	redisAuth    = flag.String("redis-auth", "", "Password to the Redis server")
@@ -26,51 +31,6 @@ var (
 )
 
 type Error string
-
-// Values is a helper that converts an array command reply to a []interface{}.
-// If err is not equal to nil, then Values returns nil, err. Otherwise, Values
-// converts the reply as follows:
-//
-//  Reply type      Result
-//  array           reply, nil
-//  nil             nil, ErrNil
-//  other           nil, error
-func Values(reply interface{}, err error) ([]interface{}, error) {
-	if err != nil {
-		return nil, err
-	}
-	switch reply := reply.(type) {
-	case []interface{}:
-		return reply, nil
-	case nil:
-		return nil, ErrNil
-	}
-	return nil, fmt.Errorf("redigo: unexpected type for Values, got type %T", reply)
-}
-
-func Strings(reply interface{}, err error) ([]string, error) {
-	if err != nil {
-		return nil, err
-	}
-	switch reply := reply.(type) {
-	case []interface{}:
-		result := make([]string, len(reply))
-		for i := range reply {
-			if reply[i] == nil {
-				continue
-			}
-			p, ok := reply[i].([]byte)
-			if !ok {
-				return nil, fmt.Errorf("redigo: unexpected element type for Strings, got type %T", reply[i])
-			}
-			result[i] = string(p)
-		}
-		return result, nil
-	case nil:
-		return nil, ErrNil
-	}
-	return nil, fmt.Errorf("redigo: unexpected type for Strings, got type ")
-}
 
 func main() {
 	flag.Parse()
@@ -100,17 +60,22 @@ func ready(c *gin.Context) {
 }
 
 func weblog(c *gin.Context) {
-	qid := c.Query("qid")
-	ret, err := Strings(redisClient.Do("MGET", qid))
+	payload := c.Query("log")
+	ctx := context.Background()
+	client, err := logging.NewClient(ctx, *projectId)
 	if err != nil {
-		c.JSON(500, gin.H{
-			"message": err,
-			"_error":  err,
-		})
-		return
+		log.Fatalf("Failed to create client: %v", err)
 	}
-	c.JSON(200, gin.H{
-		"message": ret,
-		"result":  ret,
-	})
+	logName := "analytics"
+
+	logger := client.Logger(logName)
+	logger.Log(logging.Entry{Payload: payload})
+
+	err = client.Close()
+	if err != nil {
+		log.Fatalf("Failer to close client: %v", err)
+	}
+
+	fmt.Printf("Logged: %v", payload)
+
 }
