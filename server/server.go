@@ -1,209 +1,122 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
-	"errors"
-	"flag"
+	"database/sql"
 	"fmt"
 	"log"
-	"time"
+	"net/http"
 
-	"github.com/dpapathanasiou/go-recaptcha"
 	"github.com/gin-gonic/gin"
-	"github.com/itsjamie/gin-cors"
-	"github.com/mirror-media/mm-rest/gingo"
+	_ "github.com/go-sql-driver/mysql"
+	// "github.com/itsjamie/gin-cors"
 )
 
-var (
-	redisAddress = flag.String("redis-address", ":6379", "Address to the Redis server")
-	redisPrimary = flag.String("redis-primary", ":6379", "Address to the Redis Primary server")
-	redisAuth    = flag.String("redis-auth", "", "Password to the Redis server")
-	secret       = flag.String("secret", "", "Secret for the Google recaptcha")
-	name         = ""
-	key          = ""
-	ErrNil       = errors.New("redigo: nil returned")
-)
+// var (
+// 	redisAddress = flag.String("redis-address", ":6379", "Address to the Redis server")
+// 	redisPrimary = flag.String("redis-primary", ":6379", "Address to the Redis Primary server")
+// 	redisAuth    = flag.String("redis-auth", "", "Password to the Redis server")
+// 	secret       = flag.String("secret", "", "Secret for the Google recaptcha")
+// 	name         = ""
+// 	key          = ""
+// 	ErrNil       = errors.New("redigo: nil returned")
+// )
 
-type Error string
-
-// Values is a helper that converts an array command reply to a []interface{}.
-// If err is not equal to nil, then Values returns nil, err. Otherwise, Values
-// converts the reply as follows:
-//
-//  Reply type      Result
-//  array           reply, nil
-//  nil             nil, ErrNil
-//  other           nil, error
-func Values(reply interface{}, err error) ([]interface{}, error) {
-	if err != nil {
-		return nil, err
-	}
-	switch reply := reply.(type) {
-	case []interface{}:
-		return reply, nil
-	case nil:
-		return nil, ErrNil
-	}
-	return nil, fmt.Errorf("redigo: unexpected type for Values, got type %T", reply)
+type epaperStruct struct {
+	Name *string `json:"name"`
+	ID   *string `json:"listID"`
 }
 
-func Strings(reply interface{}, err error) ([]string, error) {
-	if err != nil {
-		return nil, err
-	}
-	switch reply := reply.(type) {
-	case []interface{}:
-		result := make([]string, len(reply))
-		for i := range reply {
-			if reply[i] == nil {
-				continue
-			}
-			p, ok := reply[i].([]byte)
-			if !ok {
-				return nil, fmt.Errorf("redigo: unexpected element type for Strings, got type %T", reply[i])
-			}
-			result[i] = string(p)
-		}
-		return result, nil
-	case nil:
-		return nil, ErrNil
-	}
-	return nil, fmt.Errorf("redigo: unexpected type for Strings, got type ")
+type userStruct struct {
+	Name         string         `form:"user" json:"user" binding:"required"`
+	Subscription []epaperStruct `form:"subscription" json:"result" binding:"required"`
 }
 
 func main() {
-	flag.Parse()
+
+	db, err := sql.Open("mysql", "root:12345@tcp(localhost:3306)/members")
+	if err != nil {
+		log.Fatal(err)
+	}
 	router := gin.Default()
-	log.Printf("redis address is %s\n", *redisAddress)
-	log.Printf("redis auth is %s\n", *redisAuth)
-	router.Use(cors.Middleware(cors.Config{
-		Origins:         "*",
-		Methods:         "GET, PUT, POST, DELETE",
-		RequestHeaders:  "Origin, Authorization, Content-Type",
-		ExposedHeaders:  "",
-		MaxAge:          50 * time.Second,
-		Credentials:     true,
-		ValidateHeaders: false,
-	}))
-	redisPrimary := gingo.NewRedisStore(*redisPrimary, *redisAuth)
-	redisClient := gingo.NewRedisStore(*redisAddress, *redisAuth)
-	router.GET("/ready", func(c *gin.Context) {
-		ret, err := redisClient.Do("PING")
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": err,
-			})
-			return
-		}
-		c.JSON(200, gin.H{
-			"result": ret,
-		})
+	// router.Use(cors.Middleware(cors.Config{
+	// 	Origins:         "*",
+	// 	Methods:         "GET, PUT, POST, DELETE",
+	// 	RequestHeaders:  "Origin, Authorization, Content-Type",
+	// 	ExposedHeaders:  "",
+	// 	MaxAge:          50 * time.Second,
+	// 	Credentials:     true,
+	// 	ValidateHeaders: false,
+	// }))
+
+	router.GET("/healthz", func(c *gin.Context) {
+		c.String(http.StatusOK, "healthy")
 	})
 
-	router.GET("/tpe", func(c *gin.Context) {
-		ret, err := Values(redisClient.Do("HGETALL", "tpe-form"))
+	router.GET("/user/:id", func(c *gin.Context) {
+		id := c.Param("id")
+
+		// Use one-time preparation because we only query once
+		rows, err := db.Query("select email, name, listID from users u inner join user_epaper ue on u.id = ue.user_id inner join epapers e on e.listID = ue.epaper_id where email = ?", id)
 		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
+			log.Fatal(err)
 		}
-		captcha := c.Query("g-recaptcha-response")
-		if captcha == "" {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
+		defer rows.Close()
+		cols, _ := rows.Columns()
+		fmt.Printf("row length: %d\n", len(cols))
+
+		var email string
+
+		user := userStruct{}
+		// subscription := make([]map[string]string, 0)
+		for rows.Next() {
+			epaper := epaperStruct{}
+			// err := rows.Scan(&email, &epaperName, &epaperListid)
+			err := rows.Scan(&email, &epaper.Name, &epaper.ID)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// if (epaper{}) == epaper {
+			// 	fmt.Println("not exist in database")
+			// }
+
+			if email == "" {
+				email = id
+			}
+			fmt.Println(email)
+			user.Name = email
+			user.Subscription = append(user.Subscription, epaper)
+			// subscription = append(subscription, epaper)
+			// fmt.Println("after assign :", subscription)
 		}
-		value, err := Strings(ret, err)
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
-		} else {
-			c.JSON(200, gin.H{
-				"result": value,
-			})
-		}
-		q1 := c.Query("q1")
-		q2 := c.Query("q2")
-		q3 := c.Query("q3")
-		q4 := c.Query("q4")
-		recaptcha.Init(*secret)
-		result := recaptcha.Confirm("", captcha)
-		log.Printf("capcha return is %s\n", result)
-		if result {
-			redisPrimary.Do("HINCRBY", "tpe-form", "total", 1)
-			if q1 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q1r", 1)
-			}
-			if q2 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q2r", 1)
-			}
-			if q3 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q3r", 1)
-			}
-			if q4 == "1" {
-				redisPrimary.Do("HINCRBY", "tpe-form", "q4r", 1)
-			}
-		}
+
+		// var msg struct {
+		// 	Name         string              `json:"user"`
+		// 	Subscription []map[string]string `json:"result"`
+		// }
+
+		// msg.Name = email
+		// msg.Subscription = subscription
+
+		// if email == "" {
+		// 	email = id
+		// }
+		//fmt.Printf("The 2nd length of subscription: %d\n", len(subscription))
+		// c.String(http.StatusOK, "Hello %s subscribe to %s", email, subscription)
+		// c.JSON(200, gin.H{
+		// 	"user":   email,
+		// 	"result": subscription,
+		// })
+		c.JSON(200, user)
 	})
 
-	router.GET("/check", func(c *gin.Context) {
-		hasher := md5.New()
-		ret, err := Values(redisClient.Do("HGETALL", "listing-form"))
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": "Internal Server Error",
-			})
-			return
-		}
-		value, err := Strings(ret, err)
-		if err != nil {
-			c.JSON(200, gin.H{
-				"result": value,
-			})
-			return
-		}
-		name := c.Query("name")
-		q1 := c.Query("q1")
-		q3 := c.Query("q3")
-		q4 := c.Query("q4")
-		captcha := c.Query("g-recaptcha-response")
-		recaptcha.Init(*secret)
-		recaptcha.Confirm("", captcha)
-		if err != nil || name == "" || q1 == "" || q3 == "" || q4 == "" {
-			c.JSON(200, gin.H{
-				"result": value,
-			})
-			return
-		}
-		hasher.Write([]byte(name))
-		redis_key := hex.EncodeToString(hasher.Sum(nil))
-		name_check, err := redisClient.Do("EXISTS", redis_key)
-		if err != nil {
-			c.JSON(500, gin.H{
-				"_error": err,
-			})
-			return
-		} else {
-			c.JSON(200, gin.H{
-				"result": value,
-				"check":  name_check,
-			})
-		}
-		redisPrimary.Do("HINCRBY", "listing-form", "total", 1)
-		if q1 == "1" {
-			redisPrimary.Do("HINCRBY", "listing-form", "q1r", 1)
-		}
-		if q3 == "1" {
-			redisPrimary.Do("HINCRBY", "listing-form", "q3r", 1)
-		}
-		if q4 == "1" {
-			redisPrimary.Do("HINCRBY", "listing-form", "q4r", 1)
-		}
+	router.POST("user", func(c *gin.Context) {
+		// id := c.Param("id")
+		// fmt.Println(id)
+		subscription := c.PostForm("item")
+		email := c.PostForm("user")
+		fmt.Println(email)
+		fmt.Println(subscription)
 	})
 
 	router.Run()
