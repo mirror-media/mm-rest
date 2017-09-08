@@ -203,7 +203,7 @@ func main() {
 			return
 		}
 
-		if post.Item != "people" || post.Item != "foodtravel" {
+		if post.Item != "people" && post.Item != "foodtravel" {
 			c.String(400, "Bad Request - Requested item is invalid.")
 			return
 		}
