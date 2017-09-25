@@ -351,7 +351,7 @@ func main() {
 		c.JSON(status, res)
 	})
 
-	router.GET("/redis", func(c *gin.Context){
+	router.GET("/poll_get", func(c *gin.Context){
 		qid := c.Query("qid")
 		ret, err := Values(redisReader.Do("HGETALL", qid))
 		if err != nil {
@@ -373,7 +373,7 @@ func main() {
 		}
 	})
 
-	router.GET("/increment", func(c *gin.Context){
+	router.GET("/poll_increase", func(c *gin.Context){
 		qid := c.Query("qid")
 		field := c.Query("field")
 		redisWriter.Do("HINCRBY", qid, field, 1)
